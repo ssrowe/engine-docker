@@ -13,6 +13,8 @@
 #   - test/entrypoint-test.sh
 #   - a Trivy scan for HIGH and CRITICAL vulnerabilities, which reports in the
 #     job summary and never fails the job
+#
+# See docs/RELEASING.md, "Workflows".
 
 name: CI
 
@@ -45,6 +47,23 @@ jobs:
 
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+
+      - name: tags.sh tests
+        run: test/tags-test.sh
+
+      # promote.yaml copies README.md to Docker Hub with relative links made
+      # absolute, and Docker Hub cuts the description off at 25,000 bytes.
+      - name: README fits on Docker Hub
+        shell: python3 {0}
+        run: |
+          import re, sys
+          readme = open("README.md", encoding="utf-8").read()
+          base = "https://github.com/OpenIntegrationEngine/engine-docker/blob/main/"
+          completed = re.sub(r"\]\((?!https?:|mailto:)([^)]+)\)",
+                             lambda m: "](" + base + ("README.md" if m[1].startswith("#") else "") + m[1] + ")", readme)
+          size = len(completed.encode())
+          print(f"README.md on Docker Hub: {size} of 25000 bytes")
+          sys.exit(size > 25000)
 
   test:
     name: test (${{ matrix.variant }}, ${{ matrix.arch }})

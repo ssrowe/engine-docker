@@ -1,0 +1,193 @@
+# Promote: moves the mutable tags (4.6.0, 4.6, latest, rc, ...) to one
+# published revision, and marks its GitHub Release as a full release. Nothing is
+# rebuilt or re-signed: each tag is pointed at the revision's existing, signed
+# index digest. Promoting an older revision is how to roll back.
+#
+# Triggers:    manual runs; called by publish.yaml for upstream pre-releases and
+#              promote_now.
+# Inputs:      version   upstream version, e.g. 4.6.0
+#              revision  the N in -rN to promote; empty for the newest revision
+# Permissions: contents: write  edit the GitHub Release
+#              packages: write  move tags in GHCR
+# Variables:   IMAGE_REPOS, DOCKERHUB_USERNAME (as for publish.yaml)
+# Secrets:     DOCKERHUB_TOKEN  pushes tags; also updates the Docker Hub
+#                               description when the latest version is promoted,
+#                               which needs Read, Write & Delete. In the "release"
+#                               environment, as for publish.yaml.
+# Run by hand: gh workflow run promote.yaml -f version=4.6.0 [-f revision=1]
+#
+# See docs/RELEASING.md, "Promoting" and "Rolling back".
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Upstream OIE version, e.g. 4.6.0
+        required: true
+        type: string
+      revision:
+        description: Revision to promote (the N in -rN); empty for the newest
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      revision:
+        type: string
+        default: ""
+
+permissions: {}
+
+env:
+  VERSION: ${{ inputs.version }}
+  IMAGE_REPOS: ${{ vars.IMAGE_REPOS }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+    # Promotions read and change shared state (which version is latest), so run one at a time.
+    concurrency:
+      group: promote
+      cancel-in-progress: false
+    outputs:
+      is_latest: ${{ steps.plan.outputs.is_latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Decide which tags move
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          if ! [[ $VERSION =~ ^([0-9]+\.[0-9]+)\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::version must look like 4.6.0 or 4.7.0-rc1, without a v: '$VERSION'"
+            exit 1
+          fi
+          minor=${BASH_REMATCH[1]}
+          # "<tag> <isPrerelease>" for every published release
+          releases=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease,isDraft \
+            --jq '.[] | select(.isDraft | not) | "\(.tagName) \(.isPrerelease)"')
+          if [ -z "$REVISION" ]; then
+            REVISION=$(awk '{ print $1 }' <<< "$releases" \
+              | sed -n "s/^${VERSION//./\\.}-r\([0-9][0-9]*\)$/\1/p" | sort -n | tail -n 1)
+          fi
+          if ! grep -q "^$VERSION-r$REVISION " <<< "$releases"; then
+            echo "::error::there is no release $VERSION-r$REVISION"
+            exit 1
+          fi
+          # Versions that already have a promoted revision, plus this one
+          versions=$( (awk '$2 == "false" { print $1 }' <<< "$releases" | sed 's/-r[0-9]*$//'; echo "$VERSION") | sort -uV)
+          if [[ $VERSION == *-* ]]; then
+            # Pre-releases: the rc tags follow the highest pre-release.
+            highest=$(grep -- - <<< "$versions" | tail -n 1)
+            highest_in_minor=""
+          else
+            highest=$(grep -v -- - <<< "$versions" | tail -n 1)
+            highest_in_minor=$(grep -v -- - <<< "$versions" | grep "^${minor//./\\.}\." | tail -n 1)
+          fi
+          {
+            echo "revision=$REVISION"
+            echo "is_latest=$([ "$highest" = "$VERSION" ] && echo true || echo false)"
+            echo "is_highest_in_minor=$([ "$highest_in_minor" = "$VERSION" ] && echo true || echo false)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        if: contains(vars.IMAGE_REPOS, 'docker.io/')
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        if: contains(vars.IMAGE_REPOS, 'ghcr.io/')
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Move the tags
+        env:
+          REVISION: ${{ steps.plan.outputs.revision }}
+          IS_LATEST: ${{ steps.plan.outputs.is_latest }}
+          IS_HIGHEST_IN_MINOR: ${{ steps.plan.outputs.is_highest_in_minor }}
+        run: |
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest
+          }
+          for repo in $IMAGE_REPOS; do
+            for variant in jre-noble jdk-noble jre-alpine; do
+              source=$(deploy/tags.sh immutable "$VERSION" "$REVISION" "$variant" | head -n 1)
+              digest=$(digest_of "$repo:$source")
+              mapfile -t tags < <(deploy/tags.sh mutable "$VERSION" "$REVISION" "$variant" "$IS_LATEST" "$IS_HIGHEST_IN_MINOR")
+              args=()
+              for tag in "${tags[@]}"; do
+                args+=(-t "$repo:$tag")
+              done
+              # With a single index as the source, imagetools pushes that same index,
+              # so the tags keep the signed digest.
+              docker buildx imagetools create "${args[@]}" "$repo@$digest"
+              for tag in "${tags[@]}"; do
+                if [ "$(digest_of "$repo:$tag")" != "$digest" ]; then
+                  echo "::error::$repo:$tag doesn't point at $digest from $source"
+                  exit 1
+                fi
+              done
+              echo "$repo: ${tags[*]} -> $source ($digest)"
+            done
+          done
+
+      - name: Mark the release as promoted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ steps.plan.outputs.revision }}
+          IS_LATEST: ${{ steps.plan.outputs.is_latest }}
+        run: |
+          # Only stable versions can be GitHub's "latest" release, which the README badge shows.
+          latest=false
+          if [ "$IS_LATEST" = true ] && [[ $VERSION != *-* ]]; then
+            latest=true
+          fi
+          gh release edit "$VERSION-r$REVISION" -R "$GITHUB_REPOSITORY" --prerelease=false --latest="$latest"
+
+  dockerhub-description:
+    needs: promote
+    if: needs.promote.outputs.is_latest == 'true' && !contains(inputs.version, '-') && contains(vars.IMAGE_REPOS, 'docker.io/')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Find the Docker Hub repository
+        id: hub
+        run: |
+          for repo in $IMAGE_REPOS; do
+            if [[ $repo == docker.io/* ]]; then
+              echo "repository=${repo#docker.io/}" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+
+      - uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ steps.hub.outputs.repository }}
+          short-description: Open Integration Engine, an open source fork of Mirth Connect
+          readme-filepath: README.md
+          enable-url-completion: true
