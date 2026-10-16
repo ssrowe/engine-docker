@@ -76,7 +76,7 @@ Blocking doesn't undo a promotion that already happened; [roll back](#rolling-ba
 
 ## Workflows
 
-All cron times are UTC.
+All cron times are UTC. CI and publish builds pull Docker Hub images through Google's mirror, `mirror.gcr.io` (BuildKit config in `setup-buildx-action`), so they don't count against Docker Hub's pull limits; the promote job's tag operations still do, which is why it checks one tag per variant.
 
 ### CI ([`ci.yaml`](../.github/workflows/ci.yaml))
 
