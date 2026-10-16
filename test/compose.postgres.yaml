@@ -1,0 +1,32 @@
+# Engine with a PostgreSQL database, used by test/smoke.sh. Set ENGINE_IMAGE
+# to the image under test.
+
+services:
+  db:
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_USER: engine
+      POSTGRES_PASSWORD: "p&ss/w|rd#1"
+      POSTGRES_DB: engine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U engine -d engine"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  engine:
+    image: ${ENGINE_IMAGE:?set ENGINE_IMAGE to the image to test}
+    environment:
+      DATABASE: postgres
+      DATABASE_URL: jdbc:postgresql://db:5432/engine
+      DATABASE_USERNAME: engine
+      DATABASE_PASSWORD: "p&ss/w|rd#1"
+    ports:
+      - "127.0.0.1::8443"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy

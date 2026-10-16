@@ -1,0 +1,90 @@
+# CI: lints the repository, then builds every image variant on native amd64 and
+# arm64 runners and tests it.
+#
+# Triggers:    pull requests; pushes to main and integration; manual runs.
+# Inputs:      none.
+# Permissions: contents: read, to check out the code. Nothing is pushed, and no
+#              secrets are used, so pull requests from forks run safely.
+# Variables and secrets: none.
+# Run by hand: gh workflow run ci.yaml --ref <branch>
+#
+# Each test job builds one variant for its runner's platform, then runs:
+#   - test/smoke.sh with Derby and with PostgreSQL (test/compose.postgres.yaml)
+#   - test/entrypoint-test.sh
+#   - a Trivy scan for HIGH and CRITICAL vulnerabilities, which reports in the
+#     job summary and never fails the job
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: shellcheck deploy/*.sh test/*.sh
+
+      - name: hadolint
+        run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d hadolint - < deploy/Dockerfile
+
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+
+  test:
+    name: test (${{ matrix.variant }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [jre-noble, jdk-noble, jre-alpine]
+        arch: [amd64, arm64]
+    env:
+      VARIANT: ${{ matrix.variant }}
+      PLATFORM: linux/${{ matrix.arch }}
+      IMAGE: oie-engine:local-${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        working-directory: deploy
+        run: docker buildx bake "$VARIANT" --set "*.platform=$PLATFORM" --load
+
+      - name: Smoke test (Derby)
+        run: test/smoke.sh "$IMAGE" "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE")" derby
+
+      - name: Smoke test (PostgreSQL)
+        run: test/smoke.sh "$IMAGE" "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE")" postgres
+
+      - name: Entrypoint tests
+        run: test/entrypoint-test.sh "$IMAGE"
+
+      - name: Trivy scan (report only)
+        continue-on-error: true
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
+            image --quiet --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 "$IMAGE" | tee trivy.txt
+          {
+            echo "### Trivy: $VARIANT on $PLATFORM"
+            echo '```'
+            cat trivy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
