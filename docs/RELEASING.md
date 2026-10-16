@@ -151,6 +151,7 @@ This creates the candidate `4.6.0-rN` with the full soak. Add `-f soak_hours=48`
 gh workflow run promote.yaml -f version=4.6.0             # newest revision
 gh workflow run promote.yaml -f version=4.6.0 -f revision=2
 gh workflow run promote.yaml -f version=4.6.0 -f force=true   # despite release-blocker issues
+gh workflow run promote.yaml                                  # what the daily run does, now
 ```
 
 A manual promotion doesn't wait for the soak.

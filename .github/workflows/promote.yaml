@@ -12,7 +12,7 @@
 #              passed (the "Soak: N hours" line in its release notes);
 #              manual runs; called by publish.yaml for upstream pre-releases and
 #              promote_now.
-# Inputs:      version   upstream version, e.g. 4.6.0
+# Inputs:      version   upstream version, e.g. 4.6.0; empty to do what the daily run does
 #              revision  the N in -rN to promote; empty for the newest revision
 #              force     promote despite release-blocker issues (manual runs only;
 #                        the run log records who did it)
@@ -26,6 +26,7 @@
 #                               which needs Read, Write & Delete. In the "release"
 #                               environment, as for publish.yaml.
 # Run by hand: gh workflow run promote.yaml -f version=4.6.0 [-f revision=1] [-f force=true]
+#              gh workflow run promote.yaml   (promote every candidate that is due, now)
 #
 # See docs/RELEASING.md, "Promoting", "Blocking a promotion" and "Rolling back".
 
@@ -37,9 +38,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Upstream OIE version, e.g. 4.6.0
-        required: true
+        description: Upstream OIE version, e.g. 4.6.0; empty to promote every candidate that is due
         type: string
+        default: ""
       revision:
         description: Revision to promote (the N in -rN); empty for the newest
         type: string
@@ -105,7 +106,7 @@ jobs:
           FORCE: ${{ inputs.force && 'true' || 'false' }}
           SOAK_HOURS_FULL: ${{ vars.SOAK_HOURS_FULL || '168' }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+          if [ -z "$VERSION" ]; then
             deploy/promote.sh due > "$RUNNER_TEMP/promote.txt"
           else
             echo "$VERSION $REVISION" > "$RUNNER_TEMP/promote.txt"
