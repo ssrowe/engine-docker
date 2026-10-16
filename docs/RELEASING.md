@@ -199,7 +199,7 @@ Create a new token on Docker Hub, then `gh secret set DOCKERHUB_TOKEN` (with `--
    gh secret set DOCKERHUB_TOKEN
    gh label create release-blocker --color B60205
    ```
-4. Enable workflows in the fork's Actions tab. After the first publish, make the GHCR package public in its settings, so it can be pulled and verified anonymously.
+4. Enable workflows in the fork's Actions tab, and issues in its settings (forks have them off; promotion fails closed when it can't check for blockers). After the first publish, make the GHCR package public in its settings, so it can be pulled and verified anonymously.
 5. Signatures from the fork have the identity `https://github.com/<you>/engine-docker/.github/workflows/publish.yaml@refs/heads/<branch>`.
 6. To test Renovate, install the [Renovate app](https://github.com/apps/renovate) on the fork.
 
