@@ -513,7 +513,7 @@ Building for a platform other than your own needs QEMU emulation, e.g. `docker r
 <a name="verifying"></a>
 # Verifying images
 
-Every image revision is signed with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) keyless signing by this repository's publish workflow, and carries an SBOM and
+Every image revision is signed with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) v3 keyless signing (Sigstore bundle format, verify with cosign v3) by this repository's publish workflow, and carries an SBOM and
 [SLSA provenance](https://docs.docker.com/build/metadata/attestations/slsa-provenance/) made by BuildKit. Signatures are recorded in the public [Sigstore transparency log](https://search.sigstore.dev/).
 
 ```bash
@@ -529,11 +529,12 @@ The provenance records the engine-docker commit and workflow run, the upstream t
 upstream tarball was built; its SHA-256 comes from the upstream release's `sha256sums`. See Docker's [attestation](https://docs.docker.com/build/metadata/attestations/),
 [SBOM](https://docs.docker.com/build/metadata/attestations/sbom/) and [`imagetools inspect`](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/) docs.
 
-To enforce the signature in Kubernetes, use the identity and issuer above with [Kyverno](https://kyverno.io/docs/writing-policies/verify-images/sigstore/):
+To enforce the signature in Kubernetes, use the identity and issuer above with [Kyverno](https://kyverno.io/docs/policy-types/cluster-policy/verify-images/sigstore/):
 
 ```yaml
 verifyImages:
   - imageReferences: ["docker.io/openintegrationengine/engine*"]
+    type: SigstoreBundle
     attestors:
       - entries:
           - keyless:
@@ -541,7 +542,7 @@ verifyImages:
               issuer: https://token.actions.githubusercontent.com
 ```
 
-or the Sigstore [policy-controller](https://docs.sigstore.dev/policy-controller/overview/):
+or the Sigstore [policy-controller](https://docs.sigstore.dev/policy-controller/overview/) (not yet tested with bundle-format signatures):
 
 ```yaml
 apiVersion: policy.sigstore.dev/v1beta1
