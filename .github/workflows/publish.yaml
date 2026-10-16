@@ -155,6 +155,13 @@ jobs:
 
       # push-by-digest and attestations need the docker-container driver.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # Pull Docker Hub images (base images, the Dockerfile frontend, the SBOM
+          # scanner) through Google's mirror, which has no pull limits. The image
+          # references and digests are unchanged; pushes still go to Docker Hub.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       # CI only tests the default OIE_VERSION, so test this version before pushing it.
       - name: Build and smoke test
