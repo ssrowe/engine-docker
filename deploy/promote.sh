@@ -117,7 +117,7 @@ due() {
 			note_once "$tag" "Superseded by $version-r$newest, so this candidate won't be promoted."
 			continue
 		fi
-		soak=$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json body --jq .body | sed -n 's/^Soak: \([0-9.]*\) hours$/\1/p' | head -n 1)
+		soak=$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json body --jq .body | sed -n 's/^Soak: \([0-9.]*\) hours$/\1/p' | sed -n 1p)
 		soak=${soak:-${SOAK_HOURS_FULL:-168}}
 		hours=$(awk -v now="$now" -v t="$(date -u -d "$created" +%s)" 'BEGIN { printf "%.1f", (now - t) / 3600 }')
 		if awk -v h="$hours" -v s="$soak" 'BEGIN { exit !(h < s) }'; then
@@ -159,7 +159,7 @@ promote() {
 	local repo variant source digest tag tags args
 	for repo in $IMAGE_REPOS; do
 		for variant in "${variants[@]}"; do
-			source=$("$here/tags.sh" immutable "$version" "$revision" "$variant" | head -n 1)
+			source=$("$here/tags.sh" immutable "$version" "$revision" "$variant" | sed -n 1p)
 			digest=$(digest_of "$repo:$source")
 			mapfile -t tags < <("$here/tags.sh" mutable "$version" "$revision" "$variant" "$is_latest" "$is_highest_in_minor")
 			args=()
@@ -167,13 +167,12 @@ promote() {
 				args+=(-t "$repo:$tag")
 			done
 			# With a single index as the source, imagetools pushes that same index,
-			# so the tags keep the signed digest.
+			# so the tags keep the signed digest. One create sets every tag, so
+			# checking one is enough; each check is a pull against Docker Hub's rate limit.
 			docker buildx imagetools create "${args[@]}" "$repo@$digest" >&2
-			for tag in "${tags[@]}"; do
-				if [ "$(digest_of "$repo:$tag")" != "$digest" ]; then
-					fail "$repo:$tag doesn't point at $digest from $source"
-				fi
-			done
+			if [ "$(digest_of "$repo:${tags[0]}")" != "$digest" ]; then
+				fail "$repo:${tags[0]} doesn't point at $digest from $source"
+			fi
 			echo "$repo: ${tags[*]} -> $source ($digest)" >&2
 		done
 	done

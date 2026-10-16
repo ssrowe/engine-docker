@@ -104,7 +104,7 @@ jobs:
           ours=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' | sed 's/-r[0-9]*$//' | sort -u)
           for version in $upstream; do
             # Skip versions below MIN_VERSION and versions already published.
-            if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | by_version | head -n 1)" != "$MIN_VERSION" ]; then
+            if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | by_version | sed -n 1p)" != "$MIN_VERSION" ]; then
               continue
             fi
             if grep -qxF "$version" <<< "$ours"; then
