@@ -4,16 +4,21 @@
 # the candidate. The mutable tags (4.6.0, 4.6, latest, ...) only move when the
 # candidate is promoted by promote.yaml.
 #
-# Triggers:    manual runs.
+# Triggers:    manual runs; started by watch.yaml for new upstream releases and
+#              rebuilds.
 # Inputs:      version      upstream version without the "v", e.g. 4.6.0 or 4.7.0-rc1
 #              promote_now  promote as soon as it's published, without a soak.
 #                           Upstream pre-releases (4.7.0-rc1) are always promoted at once.
+#              soak_hours   how long promote.yaml's daily run waits before promoting
+#                           this candidate; empty for SOAK_HOURS_FULL
 # Permissions: contents: write  create the GitHub Release (release, promote)
+#              issues: write    comment on release-blocker issues (promote)
 #              packages: write  push to GHCR (build, merge, promote)
 #              id-token: write  sign keylessly with cosign (merge)
 # Variables:   IMAGE_REPOS         space-separated repositories to publish to, e.g.
 #                                  "docker.io/openintegrationengine/engine ghcr.io/openintegrationengine/engine"
 #              DOCKERHUB_USERNAME  Docker Hub user for DOCKERHUB_TOKEN
+#              SOAK_HOURS_FULL     default soak in hours (168 if unset)
 # Secrets:     DOCKERHUB_TOKEN     Docker Hub access token with Read & Write; jobs that
 #                                  use it run in the "release" environment, so upstream
 #                                  can limit it to main
@@ -22,6 +27,7 @@
 # See docs/RELEASING.md, "Publishing".
 
 name: Publish
+run-name: Publish ${{ inputs.version }}
 
 on:
   workflow_dispatch:
@@ -34,6 +40,10 @@ on:
         description: Promote immediately, without a soak
         type: boolean
         default: false
+      soak_hours:
+        description: Hours to soak before automatic promotion; empty for SOAK_HOURS_FULL
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -62,6 +72,7 @@ jobs:
         id: upstream
         env:
           GH_TOKEN: ${{ github.token }}
+          SOAK_HOURS: ${{ inputs.soak_hours }}
         run: |
           if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::version must look like 4.6.0 or 4.7.0-rc1, without a v: '$VERSION'"
@@ -69,6 +80,10 @@ jobs:
           fi
           if [ -z "$IMAGE_REPOS" ]; then
             echo "::error::the IMAGE_REPOS variable isn't set"
+            exit 1
+          fi
+          if [ -n "$SOAK_HOURS" ] && ! [[ $SOAK_HOURS =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::soak_hours must be a number of hours: '$SOAK_HOURS'"
             exit 1
           fi
           name=$(gh release view "v$VERSION" -R "$UPSTREAM_REPO" --json assets \
@@ -141,8 +156,16 @@ jobs:
       # push-by-digest and attestations need the docker-container driver.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # CI only tests the default OIE_VERSION, so test this version before pushing it.
+      - name: Build and smoke test
+        working-directory: deploy
+        run: |
+          docker buildx bake "$VARIANT" --set "*.platform=$PLATFORM" --set "*.tags=oie-engine:candidate" --load
+          # Pre-releases report their release's version: 4.6.0-rc1 reports 4.6.0.
+          ../test/smoke.sh oie-engine:candidate "${OIE_VERSION%%-*}" derby
+
       # Push this platform untagged to every repository; the merge job joins the
-      # platforms into one index and tags it.
+      # platforms into one index and tags it. The build comes from the cache.
       - name: Build and push by digest
         working-directory: deploy
         run: |
@@ -241,6 +264,8 @@ jobs:
       REVISION: ${{ needs.prepare.outputs.revision }}
       OIE_RELEASE_URL: ${{ needs.prepare.outputs.url }}
       OIE_RELEASE_SHA256: ${{ needs.prepare.outputs.sha256 }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      SOAK_HOURS: ${{ inputs.soak_hours || vars.SOAK_HOURS_FULL || '168' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -263,6 +288,15 @@ jobs:
             echo
             echo "Candidate since: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
+            # promote.sh reads this line to decide when the soak is over.
+            if [ "$PRERELEASE" = true ]; then
+              echo "Soak: 0 hours"
+            else
+              echo "Soak: $SOAK_HOURS hours"
+            fi
+            echo
+            echo "Promoted automatically once the soak is over, unless an open issue labelled \`release-blocker\` mentions \`$VERSION\` or \`$tag\`."
+            echo
             echo "### Images"
             for variant in jre-noble jdk-noble jre-alpine; do
               echo
@@ -280,7 +314,7 @@ jobs:
             echo "- [ ] Pull \`$first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | head -n 1)\` (or another variant above) and run it with your usual configuration."
             echo "- [ ] Check the signature:"
             echo "  \`cosign verify $first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | head -n 1) --certificate-identity $signer --certificate-oidc-issuer https://token.actions.githubusercontent.com\`"
-            echo "- [ ] Report anything that breaks as an issue that names \`$tag\`."
+            echo "- [ ] Report anything that breaks with the [image candidate problem]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/new?template=image-candidate-problem.yml) issue template."
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --prerelease --latest=false \
             --notes-file "$RUNNER_TEMP/notes.md"
@@ -290,6 +324,7 @@ jobs:
     if: needs.prepare.outputs.prerelease == 'true' || inputs.promote_now
     permissions:
       contents: write
+      issues: write
       packages: write
     uses: ./.github/workflows/promote.yaml
     with:

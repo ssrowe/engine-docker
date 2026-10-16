@@ -4,24 +4,36 @@
 # index digest. Promoting an older revision is how to roll back. The work is
 # done by deploy/promote.sh.
 #
-# Triggers:    manual runs; called by publish.yaml for upstream pre-releases and
+# A revision isn't promoted while an open issue labelled release-blocker
+# mentions its version (4.7.0) or the revision itself (4.7.0-r2), unless force
+# is set.
+#
+# Triggers:    daily at 06:23 UTC, promoting every candidate whose soak has
+#              passed (the "Soak: N hours" line in its release notes);
+#              manual runs; called by publish.yaml for upstream pre-releases and
 #              promote_now.
 # Inputs:      version   upstream version, e.g. 4.6.0
 #              revision  the N in -rN to promote; empty for the newest revision
-# Permissions: contents: write  edit the GitHub Release
+#              force     promote despite release-blocker issues (manual runs only;
+#                        the run log records who did it)
+# Permissions: contents: write  edit the GitHub Release and its notes
+#              issues: write    comment on release-blocker issues
 #              packages: write  move tags in GHCR
 # Variables:   IMAGE_REPOS, DOCKERHUB_USERNAME (as for publish.yaml)
+#              SOAK_HOURS_FULL  soak for candidates whose notes don't give one (default 168)
 # Secrets:     DOCKERHUB_TOKEN  pushes tags; also updates the Docker Hub
 #                               description when the latest version is promoted,
 #                               which needs Read, Write & Delete. In the "release"
 #                               environment, as for publish.yaml.
-# Run by hand: gh workflow run promote.yaml -f version=4.6.0 [-f revision=1]
+# Run by hand: gh workflow run promote.yaml -f version=4.6.0 [-f revision=1] [-f force=true]
 #
-# See docs/RELEASING.md, "Promoting" and "Rolling back".
+# See docs/RELEASING.md, "Promoting", "Blocking a promotion" and "Rolling back".
 
 name: Promote
 
 on:
+  schedule:
+    - cron: "23 6 * * *"
   workflow_dispatch:
     inputs:
       version:
@@ -32,6 +44,10 @@ on:
         description: Revision to promote (the N in -rN); empty for the newest
         type: string
         default: ""
+      force:
+        description: Promote despite open release-blocker issues
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       version:
@@ -53,6 +69,7 @@ jobs:
     environment: release
     permissions:
       contents: write
+      issues: write
       packages: write
     # Promotions read and change shared state (which version is latest), so run one at a time.
     concurrency:
@@ -85,13 +102,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REVISION: ${{ inputs.revision }}
+          FORCE: ${{ inputs.force && 'true' || 'false' }}
+          SOAK_HOURS_FULL: ${{ vars.SOAK_HOURS_FULL || '168' }}
         run: |
-          out=$(deploy/promote.sh promote "$VERSION" "$REVISION")
-          echo "$out"
-          latest=false
-          if grep -qx is_latest=true <<< "$out" && [[ $VERSION != *-* ]]; then
-            latest=true
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            deploy/promote.sh due > "$RUNNER_TEMP/promote.txt"
+          else
+            echo "$VERSION $REVISION" > "$RUNNER_TEMP/promote.txt"
           fi
+          if [ "$FORCE" = true ]; then
+            echo "::warning::$GITHUB_ACTOR is promoting $VERSION with force=true, ignoring release-blocker issues"
+          fi
+          latest=false
+          while read -r version revision; do
+            out=$(deploy/promote.sh promote "$version" "$revision")
+            echo "$out"
+            if grep -qx is_latest=true <<< "$out" && [[ $version != *-* ]]; then
+              latest=true
+            fi
+          done < "$RUNNER_TEMP/promote.txt"
           echo "latest_stable=$latest" >> "$GITHUB_OUTPUT"
 
   dockerhub-description:

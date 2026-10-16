@@ -1,0 +1,121 @@
+# Watch: starts publish.yaml for each upstream release that has no image yet,
+# and rebuilds the supported versions when the image definition changes.
+#
+# New upstream releases: every published release at or above MIN_VERSION
+# without a release in this repository is published, unless a publish of it is
+# already running. A GA release that is identical to its last release candidate
+# (GitHub's compare status "identical") gets the short soak, SOAK_HOURS_FAST;
+# any other GA release gets SOAK_HOURS_FULL. Release candidates are promoted at
+# once by publish.yaml.
+#
+# Rebuilds: a push to the default branch that changes deploy/Dockerfile,
+# deploy/docker-bake.hcl or deploy/entrypoint.sh (including Renovate's base
+# image updates) publishes a new revision, with the short soak, of: the newest
+# promoted version of each of the two newest minors, and the newest promoted
+# release candidate if it is newer than them.
+#
+# Triggers:    hourly at minute 17; pushes as above; manual runs.
+# Inputs:      none.
+# Permissions: actions: write   start publish.yaml (workflow_dispatch from
+#                               GITHUB_TOKEN is allowed to start workflows)
+#              contents: read   read releases
+# Variables:   MIN_VERSION      oldest upstream version to publish (default 4.6.0)
+#              SOAK_HOURS_FAST  soak for unchanged GA releases and rebuilds (default 48)
+#              SOAK_HOURS_FULL  soak for other GA releases (default 168)
+# Run by hand: gh workflow run watch.yaml
+#
+# See docs/RELEASING.md, "Watching upstream" and "Rebuilds".
+
+name: Watch upstream
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  push:
+    branches: [main, integration]
+    paths:
+      - deploy/Dockerfile
+      - deploy/docker-bake.hcl
+      - deploy/entrypoint.sh
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: OpenIntegrationEngine/engine
+  GH_REPO: ${{ github.repository }}
+  MIN_VERSION: ${{ vars.MIN_VERSION || '4.6.0' }}
+  SOAK_HOURS_FAST: ${{ vars.SOAK_HOURS_FAST || '48' }}
+  SOAK_HOURS_FULL: ${{ vars.SOAK_HOURS_FULL || '168' }}
+
+jobs:
+  watch:
+    # Rebuilds only come from the default branch.
+    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Publish new upstream releases and rebuilds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Version order for sort -V: "-" becomes "~", which sorts first, so
+          # 4.7.0-rc1 comes before 4.7.0.
+          by_version() { sed 's/-/~/' | sort -uV | sed 's/~/-/'; }
+          is_version() { grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || true; }
+
+          running=$(gh run list --workflow publish.yaml --limit 50 --json displayTitle,status \
+            --jq '.[] | select(.status != "completed") | .displayTitle')
+          # publish <version> <soak hours>
+          publish() {
+            if grep -qxF "Publish $1" <<< "$running"; then
+              echo "$1: a publish is already running"
+              return
+            fi
+            echo "$1: publishing with a $2-hour soak"
+            gh workflow run publish.yaml -f version="$1" -f soak_hours="$2"
+          }
+
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            promoted=$(gh release list --limit 1000 --exclude-drafts --exclude-pre-releases --json tagName \
+              --jq '.[].tagName' | sed 's/-r[0-9]*$//' | is_version | by_version)
+            stable=$(grep -v -- - <<< "$promoted" || true)
+            supported=$(for minor in $(awk -F. 'NF { print $1 "." $2 }' <<< "$stable" | sort -uV | tail -n 2); do
+              awk -F. -v m="$minor" '$1 "." $2 == m' <<< "$stable" | tail -n 1
+            done)
+            newest=$(tail -n 1 <<< "$promoted")
+            if [[ $newest == *-* ]]; then
+              supported+=$'\n'"$newest"
+            fi
+            for version in $supported; do
+              publish "$version" "$SOAK_HOURS_FAST"
+            done
+            exit 0
+          fi
+
+          upstream=$(gh release list -R "$UPSTREAM_REPO" --limit 200 --exclude-drafts --json tagName \
+            --jq '.[].tagName' | sed -n 's/^v//p' | is_version | by_version)
+          ours=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' | sed 's/-r[0-9]*$//' | sort -u)
+          for version in $upstream; do
+            # Skip versions below MIN_VERSION and versions already published.
+            if [ "$(printf '%s\n%s\n' "$MIN_VERSION" "$version" | by_version | head -n 1)" != "$MIN_VERSION" ]; then
+              continue
+            fi
+            if grep -qxF "$version" <<< "$ours"; then
+              continue
+            fi
+            soak=$SOAK_HOURS_FULL
+            last_rc=$(grep "^${version//./\\.}-" <<< "$upstream" | tail -n 1 || true)
+            if [[ $version != *-* ]] && [ -n "$last_rc" ] \
+              && [ "$(gh api "repos/$UPSTREAM_REPO/compare/v$last_rc...v$version" --jq .status)" = identical ]; then
+              echo "$version: identical to $last_rc"
+              soak=$SOAK_HOURS_FAST
+            fi
+            publish "$version" "$soak"
+          done

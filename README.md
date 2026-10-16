@@ -1,3 +1,10 @@
+[![CI](https://github.com/OpenIntegrationEngine/engine-docker/actions/workflows/ci.yaml/badge.svg)](https://github.com/OpenIntegrationEngine/engine-docker/actions/workflows/ci.yaml)
+[![Publish](https://github.com/OpenIntegrationEngine/engine-docker/actions/workflows/publish.yaml/badge.svg)](https://github.com/OpenIntegrationEngine/engine-docker/actions/workflows/publish.yaml)
+[![Latest image](https://img.shields.io/github/v/release/OpenIntegrationEngine/engine-docker?label=latest%20image)](https://github.com/OpenIntegrationEngine/engine-docker/releases/latest)
+[![Newest image](https://img.shields.io/github/v/release/OpenIntegrationEngine/engine-docker?include_prereleases&label=newest)](https://github.com/OpenIntegrationEngine/engine-docker/releases)
+[![Docker pulls](https://img.shields.io/docker/pulls/openintegrationengine/engine)](https://hub.docker.com/r/openintegrationengine/engine)
+[![Image size](https://img.shields.io/docker/image-size/openintegrationengine/engine/latest)](https://hub.docker.com/r/openintegrationengine/engine/tags)
+
 <a name="quick-reference"></a>
 # Quick Reference
 
@@ -47,14 +54,22 @@ Use the default unless you need JDK tools such as `jcmd` for troubleshooting, or
 
 **Which tags move:**
 - `4.6.0-r1` (and `4.6.0-jre21-noble-r1`, ...) is one image revision and never changes. **Pin this, or the image digest, in production.**
-- `4.6.0` points to the newest promoted revision of 4.6.0. New revisions are built when the base image, Java or this repository changes, and are promoted after a test period.
-- `4.6` points to the newest promoted patch of 4.6; `latest` to the newest promoted stable version. There is no `4` tag.
-- `4.7.0-rc1` and `rc`, `rc-jdk`, `rc-alpine` are upstream release candidates, for testing only. They move as soon as they're published.
+- `4.6.0` is the newest promoted revision of 4.6.0. New revisions follow base image, Java and packaging updates.
+- `4.6` is the newest promoted patch of 4.6, and `latest` the newest stable version. There is no `4` tag.
+- `4.7.0-rc1`, `rc`, `rc-jdk` and `rc-alpine` are upstream release candidates, for testing only.
 
 `-rN` is an image revision; `-rcN` is an upstream release candidate. `4.7.0-rc1-r2` is the second image revision of 4.7.0-rc1.
 
 The older tag names `-ubuntu`, `-ubuntu-jre`, `-ubuntu-jdk` and `-alpine-jre` (e.g. `latest-ubuntu`, `4.6.0-alpine-jre`) still move with their equivalents above. `latest-alpine-jdk` is no
 longer updated, and the 4.5.2 tags are not rebuilt. How images are published and promoted is described in [docs/RELEASING.md](docs/RELEASING.md).
+
+#### How new images are released
+1. Within an hour of an upstream release, a **candidate** such as `4.7.0-r1` is built, tested, signed and listed as a [pre-release](https://github.com/OpenIntegrationEngine/engine-docker/releases).
+2. It soaks for 48 hours if it matches the last release candidate or is a rebuild (e.g. base image updates), otherwise 7 days. Release candidates (`4.7.0-rc1`) don't soak.
+3. It is **promoted**: `4.7.0`, `4.7`, `latest`, ... move to it.
+
+Please test candidates, and report problems with the [image candidate problem](https://github.com/OpenIntegrationEngine/engine-docker/issues/new?template=image-candidate-problem.yml)
+template; a maintainer can hold the promotion until it's fixed.
 
 #### Upgrading from the 4.5.2 images
 - Java 21 instead of Java 17.
@@ -510,9 +525,9 @@ docker buildx imagetools inspect openintegrationengine/engine:4.6.0 --format '{{
 docker buildx imagetools inspect openintegrationengine/engine:4.6.0 --format '{{json .SBOM}}'
 ```
 
-The provenance records the engine-docker commit and workflow run, the upstream release tarball's URL and SHA-256 (checked during the build), and the base image digests. It doesn't show how the
-upstream tarball was built: its SHA-256 comes from the `sha256sums` file of the [upstream release](https://github.com/OpenIntegrationEngine/engine/releases). See Docker's
-[attestation](https://docs.docker.com/build/metadata/attestations/) and [SBOM](https://docs.docker.com/build/metadata/attestations/sbom/) docs and [`imagetools inspect`](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/).
+The provenance records the engine-docker commit and workflow run, the upstream tarball's URL and SHA-256 (checked during the build), and the base image digests. It doesn't show how the
+upstream tarball was built; its SHA-256 comes from the upstream release's `sha256sums`. See Docker's [attestation](https://docs.docker.com/build/metadata/attestations/),
+[SBOM](https://docs.docker.com/build/metadata/attestations/sbom/) and [`imagetools inspect`](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/) docs.
 
 To enforce the signature in Kubernetes, use the identity and issuer above with [Kyverno](https://kyverno.io/docs/writing-policies/verify-images/sigstore/):
 

@@ -1,0 +1,37 @@
+name: Image candidate problem
+description: Report a problem with an image that hasn't been promoted yet (a pre-release such as 4.7.0-r1), so promotion can be held.
+title: "Image candidate problem: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Image candidates are promoted to the `4.7.0`, `4.7` and `latest` tags automatically after a test period.
+        A maintainer will look at this report and, if needed, label it `release-blocker` to hold that promotion until it's fixed.
+        Put the version (e.g. `4.7.0`) or the exact revision (e.g. `4.7.0-r2`) in the title or the fields below.
+  - type: input
+    id: image
+    attributes:
+      label: Image tag or digest
+      description: The exact image you ran.
+      placeholder: openintegrationengine/engine:4.7.0-r2 or openintegrationengine/engine@sha256:...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and revision
+      placeholder: 4.7.0-r2
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What broke
+      description: What you did, what you expected and what happened instead. Include logs and how you run the container (redact secrets).
+    validations:
+      required: true
+  - type: input
+    id: previous
+    attributes:
+      label: Last image that worked
+      placeholder: 4.7.0-r1

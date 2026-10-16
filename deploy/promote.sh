@@ -3,16 +3,22 @@
 # Promotes an image revision: points the mutable tags from tags.sh at the
 # revision's signed index in every repository in IMAGE_REPOS, then marks its
 # GitHub Release as a full release. Nothing is rebuilt or re-signed. Run by
-# promote.yaml; see docs/RELEASING.md, "Promoting".
+# promote.yaml; see docs/RELEASING.md, "Promoting" and "Blocking a promotion".
 #
 # Usage: deploy/promote.sh plan <version> [revision]
 #          Prints revision=, is_latest= and is_highest_in_minor= for promoting
 #          <version>-r<revision>. The revision defaults to the newest one.
 #        deploy/promote.sh promote <version> [revision]
-#          Promotes it, then prints the same lines.
+#          Promotes it, then prints the same lines. Refuses while an open issue
+#          labelled release-blocker mentions it, unless FORCE=true.
+#        deploy/promote.sh due
+#          Prints "<version> <revision>" for each candidate that has finished its
+#          soak and isn't blocked. Notes superseded and blocked candidates in
+#          their release notes, and comments once on each blocking issue.
 #
-# Environment: GITHUB_REPOSITORY, IMAGE_REPOS, and GH_TOKEN for gh. Needs
-# docker buildx and jq.
+# Environment: GITHUB_REPOSITORY, IMAGE_REPOS, GH_TOKEN for gh, and optionally
+# FORCE and SOAK_HOURS_FULL (the soak for candidates whose notes don't give
+# one; default 168). Needs docker buildx and jq.
 
 set -eu -o pipefail
 
@@ -61,6 +67,76 @@ plan() {
 	echo "is_highest_in_minor=$([ "$highest_in_minor" = "$version" ] && echo true || echo false)"
 }
 
+# blocking_issues <version> <revision>: numbers of open release-blocker issues
+# whose title or body mentions the version (blocking every revision) or this
+# revision of it, e.g. 4.7.0 or 4.7.0-r2. 4.7.0-rc1 also counts as 4.7.0,
+# which errs on the side of blocking.
+blocking_issues() {
+	local version=$1 revision=$2 number text mention
+	gh issue list -R "$GITHUB_REPOSITORY" --label release-blocker --state open --limit 200 --json number,title,body \
+		--jq '.[] | "\(.number)\t\(.title) \((.body // "") | gsub("[\\n\\r\\t]"; " "))"' \
+		| while IFS=$'\t' read -r number text; do
+			while read -r mention; do
+				if [ "$mention" = "$version" ] || [ "$mention" = "$version-r$revision" ]; then
+					echo "$number"
+					break
+				fi
+			done < <(grep -oP "(?<![0-9.])\Q$version\E(-r[0-9]+)?(?![0-9.])" <<< "$text" || true)
+		done
+}
+
+# note_once <release tag> <line>: adds a line to a release's notes unless it's there.
+note_once() {
+	local body
+	body=$(gh release view "$1" -R "$GITHUB_REPOSITORY" --json body --jq .body)
+	if ! grep -qxF -- "$2" <<< "$body"; then
+		printf '%s\n\n%s\n' "$body" "$2" | gh release edit "$1" -R "$GITHUB_REPOSITORY" --notes-file - > /dev/null
+	fi
+}
+
+# comment_once <issue> <text>: comments on an issue unless the same comment is there.
+comment_once() {
+	if ! gh issue view "$1" -R "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' | grep -qxF -- "$2"; then
+		gh issue comment "$1" -R "$GITHUB_REPOSITORY" --body "$2" > /dev/null
+	fi
+}
+
+due() {
+	local releases now tag prerelease created version revision newest soak hours blockers number
+	releases=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1000 --json tagName,isPrerelease,isDraft,createdAt \
+		--jq '.[] | select(.isDraft | not) | "\(.tagName) \(.isPrerelease) \(.createdAt)"')
+	now=$(date -u +%s)
+	while read -r tag prerelease created; do
+		if [ "$prerelease" != true ] || ! [[ $tag =~ -r[0-9]+$ ]]; then
+			continue
+		fi
+		version=${tag%-r*}
+		revision=${tag##*-r}
+		newest=$(newest_revision "$releases" "$version")
+		if [ "$revision" != "$newest" ]; then
+			note_once "$tag" "Superseded by $version-r$newest, so this candidate won't be promoted."
+			continue
+		fi
+		soak=$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json body --jq .body | sed -n 's/^Soak: \([0-9.]*\) hours$/\1/p' | head -n 1)
+		soak=${soak:-${SOAK_HOURS_FULL:-168}}
+		hours=$(awk -v now="$now" -v t="$(date -u -d "$created" +%s)" 'BEGIN { printf "%.1f", (now - t) / 3600 }')
+		if awk -v h="$hours" -v s="$soak" 'BEGIN { exit !(h < s) }'; then
+			echo "$tag: soaking, $hours of $soak hours" >&2
+			continue
+		fi
+		mapfile -t blockers < <(blocking_issues "$version" "$revision")
+		if [ ${#blockers[@]} -gt 0 ]; then
+			for number in "${blockers[@]}"; do
+				comment_once "$number" "Promotion of \`$tag\` is blocked by this issue."
+				note_once "$tag" "Blocked by #$number."
+			done
+			echo "$tag: blocked by ${blockers[*]/#/#}" >&2
+			continue
+		fi
+		echo "$version $revision"
+	done <<< "$releases"
+}
+
 digest_of() {
 	docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest
 }
@@ -71,6 +147,14 @@ promote() {
 	revision=$(sed -n 's/^revision=//p' <<< "$out")
 	is_latest=$(sed -n 's/^is_latest=//p' <<< "$out")
 	is_highest_in_minor=$(sed -n 's/^is_highest_in_minor=//p' <<< "$out")
+
+	local blockers
+	blockers=$(blocking_issues "$version" "$revision" | sed 's/^/#/' | paste -sd ' ')
+	if [ -n "$blockers" ] && [ "${FORCE:-false}" != true ]; then
+		fail "$version-r$revision is blocked by release-blocker issue(s) $blockers. Close them, remove the label, or promote with force."
+	elif [ -n "$blockers" ]; then
+		echo "Promoting $version-r$revision despite release-blocker issue(s) $blockers (FORCE=true)" >&2
+	fi
 
 	local repo variant source digest tag tags args
 	for repo in $IMAGE_REPOS; do
@@ -105,8 +189,9 @@ promote() {
 case ${1:-} in
 	plan) plan "${@:2}" ;;
 	promote) promote "${@:2}" ;;
+	due) due ;;
 	*)
-		echo "usage: $0 plan|promote <version> [revision]" >&2
+		echo "usage: $0 plan|promote <version> [revision], or $0 due" >&2
 		exit 2
 		;;
 esac
