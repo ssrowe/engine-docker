@@ -311,9 +311,9 @@ jobs:
               | jq -r '[.target[].args.BASE_IMAGE] | unique[] | "- Base image: `\(.)`"'
             echo
             echo "### Testing this candidate"
-            echo "- [ ] Pull \`$first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | head -n 1)\` (or another variant above) and run it with your usual configuration."
+            echo "- [ ] Pull \`$first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | sed -n 1p)\` (or another variant above) and run it with your usual configuration."
             echo "- [ ] Check the signature:"
-            echo "  \`cosign verify $first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | head -n 1) --certificate-identity $signer --certificate-oidc-issuer https://token.actions.githubusercontent.com\`"
+            echo "  \`cosign verify $first_repo:$(deploy/tags.sh immutable "$VERSION" "$REVISION" jre-noble | sed -n 1p) --certificate-identity $signer --certificate-oidc-issuer https://token.actions.githubusercontent.com\`"
             echo "- [ ] Report anything that breaks with the [image candidate problem]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/new?template=image-candidate-problem.yml) issue template."
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --prerelease --latest=false \
