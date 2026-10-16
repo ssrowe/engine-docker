@@ -45,7 +45,7 @@ fail() {
 	exit 1
 }
 
-port=$(docker port "$container" 8443/tcp | head -n 1)
+port=$(docker port "$container" 8443/tcp | sed -n 1p)
 url="https://${port}"
 api() { curl --silent --insecure --cookie "$cookies" --cookie-jar "$cookies" -H 'X-Requested-With: OpenAPI' "$@"; }
 
