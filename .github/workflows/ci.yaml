@@ -48,8 +48,10 @@ jobs:
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
 
-      - name: tags.sh tests
-        run: test/tags-test.sh
+      - name: tags.sh and promote.sh tests
+        run: |
+          test/tags-test.sh
+          test/promote-test.sh
 
       # promote.yaml copies README.md to Docker Hub with relative links made
       # absolute, and Docker Hub cuts the description off at 25,000 bytes.

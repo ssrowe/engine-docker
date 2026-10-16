@@ -42,7 +42,7 @@ GitHub Releases in this repository are the record of what was published and prom
 
 - **Triggers**: pull requests, pushes to `main` and `integration`, manual runs.
 - **Permissions**: `contents: read`. No secrets, so pull requests from forks are safe.
-- **Jobs**: lint (shellcheck, hadolint, actionlint, `tags-test.sh`, README size for Docker Hub), then a test job per variant on amd64 and arm64 runners: build, `test/smoke.sh` with Derby and PostgreSQL, `test/entrypoint-test.sh`, and a Trivy scan that reports without failing.
+- **Jobs**: lint (shellcheck, hadolint, actionlint, `tags-test.sh`, `promote-test.sh`, README size for Docker Hub), then a test job per variant on amd64 and arm64 runners: build, `test/smoke.sh` with Derby and PostgreSQL, `test/entrypoint-test.sh`, and a Trivy scan that reports without failing.
 
 ### Publish ([`publish.yaml`](../.github/workflows/publish.yaml))
 
@@ -60,7 +60,7 @@ GitHub Releases in this repository are the record of what was published and prom
 
 - **Triggers**: manual runs; called by `publish.yaml`.
 - **Inputs**: `version`, `revision` (empty for the newest).
-- **What it does**: works out whether the version is the highest promoted version and the highest patch of its minor, points the mutable tags at the revision's existing index digest with `docker buildx imagetools create` (nothing is rebuilt or re-signed, and the job checks every tag has the signed digest), and marks the release as a full release. Only stable versions are marked as GitHub's "latest" release. When the latest stable version is promoted, it also copies `README.md` to the Docker Hub description.
+- **What it does**: runs [`deploy/promote.sh`](../deploy/promote.sh), which works out whether the version is the highest promoted version and the highest patch of its minor, points the mutable tags at the revision's existing index digest with `docker buildx imagetools create` (nothing is rebuilt or re-signed, and the job checks every tag has the signed digest), and marks the release as a full release. Only stable versions are marked as GitHub's "latest" release. When the latest stable version is promoted, it also copies `README.md` to the Docker Hub description.
 - **Permissions**: `contents: write` (release), `packages: write` (GHCR).
 
 ### Variables and secrets
