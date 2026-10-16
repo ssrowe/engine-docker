@@ -441,10 +441,34 @@ Example:
 
 ## Building images
 
-To build the full set of four images (`ubuntu-jre`, `ubuntu-jdk`, `alpine-jre`, and `alpine-jdk`) run the following command in the `deploy/` directory:
+The images are defined in [`deploy/docker-bake.hcl`](deploy/docker-bake.hcl) and built with [Docker Bake](https://docs.docker.com/build/bake/). There are three variants, all on Java 21 for `linux/amd64` and `linux/arm64`:
+
+| Bake target  | Base image                       |
+|--------------|----------------------------------|
+| `jre-noble`  | `eclipse-temurin:21-jre-noble`   |
+| `jdk-noble`  | `eclipse-temurin:21-jdk-noble`   |
+| `jre-alpine` | `eclipse-temurin:21-jre-alpine`  |
+
+Run these commands in the `deploy/` directory:
 ```sh
-docker compose build --build-arg CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Show the resolved build definition
+docker buildx bake --print
+
+# Build every variant for both platforms
+docker buildx bake
+
+# Build one variant for your own platform and load it as oie-engine:local-jre-noble
+docker buildx bake jre-noble --set '*.platform=linux/amd64' --load
 ```
+
+Variables in `docker-bake.hcl` can be overridden from the environment. To build a different OIE release, set its version and the tarball's sha256 from the release's `sha256sums` file:
+```sh
+OIE_VERSION=4.6.0-rc1 OIE_RELEASE_SHA256=<sha256> docker buildx bake
+```
+
+The build fails if the downloaded tarball doesn't match the checksum. It also fails if the base image contains files outside `/opt/engine` owned by uid or gid 1000, the uid the engine runs as.
+
+Building for a platform other than your own needs QEMU emulation, e.g. `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
 
 ------------
 
