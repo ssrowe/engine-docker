@@ -175,7 +175,7 @@ jobs:
             --set "*.tags=" \
             --set "*.output=type=image,\"name=$names\",push-by-digest=true,name-canonical=true,push=true" \
             --set "*.attest=type=sbom" \
-            --set "*.attest=type=provenance,mode=max" \
+            --set "*.attest=type=provenance,mode=max,builder-id=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --metadata-file "$RUNNER_TEMP/metadata.json"
           digest=$(jq -r --arg t "$VARIANT" '.[$t]["containerimage.digest"]' "$RUNNER_TEMP/metadata.json")
           mkdir -p "$RUNNER_TEMP/digests"
