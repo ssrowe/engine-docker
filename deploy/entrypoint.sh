@@ -85,7 +85,7 @@ declare -A named_properties=(
 )
 for var in "${!named_properties[@]}"; do
 	if [ -n "${!var+x}" ]; then
-		set_property "${named_properties[$var]}" "${!var}"
+		set_property "${named_properties[$var]}" "x${!var}"
 	fi
 done
 
