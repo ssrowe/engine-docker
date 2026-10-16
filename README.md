@@ -13,6 +13,8 @@
         * [Common mirth.properties options](#common-mirth-properties-options)
         * [Other mirth.properties options](#other-mirth-properties-options)
     * [Using Docker Secrets](#using-docker-secrets)
+    * [Trusting additional CA certificates](#custom-ca-certificates)
+    * [Running with fewer privileges](#security)
     * [Using Volumes](#using-volumes)
         * [The appdata folder](#the-appdata-folder)
         * [Additional extensions](#additional-extensions)
@@ -262,21 +264,20 @@ balancer.
 <a name="env-vmoptions"></a>
 #### `VMOPTIONS`
 
-A comma-separated list of JVM command-line options to place in the `.vmoptions` file. For example to set the max heap size:
-
-* -Xmx512m
+A comma-separated list of JVM options, for example `VMOPTIONS=-Xmx512m,-Duser.timezone=UTC`. On every start they are written to `conf/docker.vmoptions`, which is read after the default options, so
+they override them (the default heap is `-Xmx256m`). Restarting the container doesn't add duplicates.
 
 <a name="env-delay"></a>
 #### `DELAY`
 
-This tells the entrypoint script to wait for a certain amount of time (in seconds). The entrypoint script will automatically use a command-line SQL client to check connectivity and wait until the
-database is up before starting Engine, but only when using PostgreSQL or MySQL. If you are using Oracle or SQL Server and the database is being started up at the same time as Engine, you may want
-to use this option to tell Engine to wait a bit to allow the database time to startup.
+The number of seconds the entrypoint script waits before starting Engine. It doesn't check the database; use it to give a database that starts at the same time as Engine time to come up.
 
 <a name="env-keystore-download"></a>
 #### `KEYSTORE_DOWNLOAD`
 
 A URL location of a Engine keystore file. This file will be downloaded into the container and Engine will use it as its keystore.
+
+If any of the downloads (`KEYSTORE_DOWNLOAD`, `EXTENSIONS_DOWNLOAD`, `CUSTOM_JARS_DOWNLOAD`) fails, the container exits with an error instead of starting Engine without it.
 
 <a name ="env-extensions-download"></a>
 #### `EXTENSIONS_DOWNLOAD`
@@ -307,6 +308,9 @@ Set the `server.id` to a specific value. Use this to preserve or set the server 
 Other options in the mirth.properties file can also be changed. Any environment variable starting with the `_MP_` prefix will set the corresponding value in mirth.properties. Replace `.` with a single
 underscore `_` and `-` with two underscores `__`.
 
+Values are written to mirth.properties exactly as given, from both named and `_MP_` variables. mirth.properties is a Java properties file, so a backslash there starts an escape sequence; write `\\` for a
+literal backslash. A value containing a newline stops the container with an error.
+
 Examples:
 
 * Set the server TLS protocols to only allow TLSv1.2 and 1.3:
@@ -333,9 +337,9 @@ There are two secret names this image supports:
 
 If present, any properties in this secret will be merged into the mirth.properties file.
 
-##### mcserver_vmoptions
+##### oieserver_vmoptions
 
-If present, any JVM options in this secret will be appended onto the mcserver.vmoptions file.
+If present, the JVM options in this secret (one per line) are applied after `VMOPTIONS`. The older name `mcserver_vmoptions` is also accepted.
 
 ------------
 
@@ -370,6 +374,42 @@ secrets:
 The **secrets** section at the bottom specifies the local file location for each secret.  Change `/local/path/to/secret.properties` to the correct local path and filename.
 
 Inside the configuration for the Engine container there is also a **secrets** section that lists the secrets you want to include for that container.
+
+------------
+
+<a name="custom-ca-certificates"></a>
+## Trusting additional CA certificates [↑](#top)
+
+To make Engine trust extra CA certificates, for example for a database or HTTPS endpoint with an internal CA, mount a directory of PEM certificates at `/certificates` and set
+`USE_SYSTEM_CA_CERTS=1`. This uses the [Eclipse Temurin](https://hub.docker.com/_/eclipse-temurin) base image's support for custom certificates; because Engine doesn't run as root, the certificates
+are added to a temporary copy of the Java truststore when the container starts.
+
+```bash
+docker run -e USE_SYSTEM_CA_CERTS=1 -v /local/path/to/certificates:/certificates:ro -p 8443:8443 openintegrationengine/engine
+```
+
+------------
+
+<a name="security"></a>
+## Running with fewer privileges [↑](#top)
+
+Engine runs as the unprivileged user `engine` (uid 1000) and doesn't need any Linux capabilities. We recommend dropping them and blocking privilege escalation:
+
+```bash
+docker run --cap-drop ALL --security-opt no-new-privileges -p 8443:8443 openintegrationengine/engine
+```
+
+In `compose.yaml`:
+
+```yaml
+services:
+  engine:
+    image: openintegrationengine/engine
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+```
 
 ------------
 

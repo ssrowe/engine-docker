@@ -15,10 +15,15 @@ ADD --checksum=sha256:${OIE_RELEASE_SHA256} ${OIE_RELEASE_URL} /tmp/engine.tar.g
 
 WORKDIR /opt/engine
 
+# derby.log is written to the working directory, so it is pre-created writable.
+# entrypoint.sh writes docker.vmoptions on every start. It is included from
+# custom.vmoptions because the launcher follows at most three -include-options
+# per file, and oieserver.vmoptions already has three.
 RUN tar -xzf /tmp/engine.tar.gz --strip-components=1 \
     && rm -rf cli-lib manager-lib mirth-cli-launcher.jar oiecommand \
     && mkdir -p appdata custom-extensions logs \
-    && touch derby.log \
+    && touch derby.log conf/docker.vmoptions \
+    && echo '-include-options /opt/engine/conf/docker.vmoptions' >> conf/custom.vmoptions \
     && chown -R 1000:0 appdata conf custom-extensions derby.log extensions logs server-launcher-lib oieserver.vmoptions \
     && chmod -R g=u appdata conf custom-extensions derby.log extensions logs server-launcher-lib oieserver.vmoptions
 
