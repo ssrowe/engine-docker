@@ -131,7 +131,7 @@ A push to the default branch that changes the image definition (`deploy/Dockerfi
 
 ### Renovate
 
-[`renovate.json`](../renovate.json) keeps the pinned digests current: the Temurin base images in `docker-bake.hcl`, the Alpine downloader in the Dockerfile, PostgreSQL in `test/compose.postgres.yaml`, the tool images in `ci.yaml`, and the actions (pinned by commit). Digest, pin and patch updates merge automatically once CI passes, and a merged base image update starts a rebuild.
+[`renovate.json`](../renovate.json) keeps the pinned digests current: the Temurin base images in `docker-bake.hcl`, the Alpine downloader in the Dockerfile, PostgreSQL in `test/compose.postgres.yaml`, the tool images in `ci.yaml`, and the actions (pinned by commit). Digest, pin and patch updates merge automatically once CI passes, and a merged base image update starts a rebuild. Minor updates open a PR for review. Major updates wait for approval on the Dependency Dashboard issue that Renovate keeps open. Renovate PRs are labelled `dependencies`, and Renovate opens security PRs for vulnerabilities it finds in the dependencies.
 
 A new Java major version is not proposed. The images use one set of base images for every OIE version, so moving to a new Java version, or a new Ubuntu or Alpine release, would also change the images of older supported versions when they are rebuilt. How to handle that is an open question.
 

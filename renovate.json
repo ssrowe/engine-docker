@@ -1,11 +1,25 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "dependencyDashboard": true,
+  "major": {
+    "dependencyDashboardApproval": true
+  },
+  "labels": [
+    "dependencies"
+  ],
+  "osvVulnerabilityAlerts": true,
   "customManagers": [
     {
       "customType": "regex",
       "description": "Digest-pinned images in docker-bake.hcl and in workflow run steps",
-      "managerFilePatterns": ["/^deploy/docker-bake\\.hcl$/", "/^\\.github/workflows/.+\\.ya?ml$/"],
+      "managerFilePatterns": [
+        "/^deploy/docker-bake\\.hcl$/",
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
       "matchStrings": [
         "(?<depName>[a-z0-9][a-z0-9./_-]*):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -15,20 +29,35 @@
   "packageRules": [
     {
       "description": "Temurin tags look like 21.0.12.1_1-jre-noble",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["eclipse-temurin"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "eclipse-temurin"
+      ],
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?_(?<revision>\\d+)-(?<compatibility>.+)$"
     },
     {
       "description": "A new Java major version is a decision, not an update (see docs/RELEASING.md, \"Renovate\")",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["eclipse-temurin"],
-      "matchUpdateTypes": ["major"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "eclipse-temurin"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "enabled": false
     },
     {
       "description": "Merge digest, pin and patch updates once CI passes; a base image change then rebuilds the images (watch.yaml)",
-      "matchUpdateTypes": ["digest", "pin", "pinDigest", "patch"],
+      "matchUpdateTypes": [
+        "digest",
+        "pin",
+        "pinDigest",
+        "patch"
+      ],
       "automerge": true
     }
   ]
