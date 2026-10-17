@@ -134,6 +134,13 @@ containers+=("$name")
 docker run -d --name "$name" -e "VMOPTIONS=-Xmx300m" -e "_MP_FOO_BAR=1" "$image" sleep infinity > /dev/null
 docker restart -t 0 "$name" > /dev/null
 docker restart -t 0 "$name" > /dev/null
+# Wait until the entrypoint has finished and exec'd the command.
+for _ in $(seq 1 30); do
+	if [ "$(docker exec "$name" cat /proc/1/comm 2> /dev/null)" = sleep ]; then
+		break
+	fi
+	sleep 1
+done
 vm=$(docker exec "$name" cat conf/docker.vmoptions)
 props=$(docker exec "$name" cat conf/mirth.properties)
 if [ "$vm" = "-Xmx300m" ] && [ "$(count_lines "$props" '^foo\.bar = ')" = 1 ] \
