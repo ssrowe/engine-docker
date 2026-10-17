@@ -202,7 +202,7 @@ Create a new token on Docker Hub, then `gh secret set DOCKERHUB_TOKEN` (with `--
    ```
 4. Enable workflows in the fork's Actions tab, and issues in its settings (forks have them off; promotion fails closed when it can't check for blockers). After the first publish, make the GHCR package public in its settings, so it can be pulled and verified anonymously.
 5. Signatures from the fork have the identity `https://github.com/<you>/engine-docker/.github/workflows/publish.yaml@refs/heads/<branch>`.
-6. To test Renovate, install the [Renovate app](https://github.com/apps/renovate) on the fork and turn on "Allow auto-merge" (`gh repo edit --enable-auto-merge`).
+6. To test Renovate, install the [Renovate app](https://github.com/apps/renovate) on the fork turn on "Allow auto-merge" (`gh repo edit --enable-auto-merge`), and protect the default branch with the CI jobs as required checks.
 
 ## Activating upstream
 
@@ -210,6 +210,6 @@ An organization admin:
 
 1. Sets `IMAGE_REPOS="docker.io/openintegrationengine/engine ghcr.io/openintegrationengine/engine"`, `DOCKERHUB_USERNAME` and `MIN_VERSION=4.6.0`. The soak variables can stay unset.
 2. Adds `DOCKERHUB_TOKEN` as an organization access token, ideally in a `release` environment limited to `main`.
-3. Creates the `release-blocker` label, installs the Renovate app, and turns on "Allow auto-merge" in the repository settings, so Renovate's updates merge as soon as CI passes.
+3. Creates the `release-blocker` label, installs the Renovate app, turns on "Allow auto-merge", and protects `main` with the CI jobs (`lint` and the six `test (...)` jobs) as required checks. GitHub only offers auto-merge on a protected branch; without it Renovate merges on its next run, hours later.
 4. Runs `gh workflow run publish.yaml -f version=4.6.0 -f promote_now=true`.
 5. Makes the GHCR package public.
