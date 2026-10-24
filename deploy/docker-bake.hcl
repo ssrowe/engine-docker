@@ -30,7 +30,7 @@ variable "JDK_NOBLE_IMAGE" {
 }
 
 variable "JRE_ALPINE_IMAGE" {
-  default = "eclipse-temurin:21.0.12.1_1-jre-alpine@sha256:51ab5e3302e7141ce665ca3ea85e8b5cd648eafbc3c0c90dd79d6537684e4555"
+  default = "eclipse-temurin:21.0.12.1_1-jre-alpine@sha256:b48e02e0ea88d7bfb305335df94923bdef394905f4147dccd52e873cf17b1088"
 }
 
 # Image revision (the N in -rN); empty for local builds.
