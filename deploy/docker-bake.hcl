@@ -22,7 +22,7 @@ variable "OIE_RELEASE_SHA256" {
 }
 
 variable "JRE_NOBLE_IMAGE" {
-  default = "eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f"
+  default = "eclipse-temurin:21.0.13_9-jre-noble@sha256:0d57a8e90c2bb844c5a8e1b2b71e11eff06dad7edcfd803cd21ed4ae203b2515"
 }
 
 variable "JDK_NOBLE_IMAGE" {
