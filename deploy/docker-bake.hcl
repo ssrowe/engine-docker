@@ -26,7 +26,7 @@ variable "JRE_NOBLE_IMAGE" {
 }
 
 variable "JDK_NOBLE_IMAGE" {
-  default = "eclipse-temurin:21.0.13_9-jdk-noble@sha256:06c1f157dacf6b68198bd9a4186dd4c34ef24e65d7bbbe2a0cf8e62571ad38c9"
+  default = "eclipse-temurin:21.0.13_9-jdk-noble@sha256:a2e61ec9e2e4d5c7aa885412400319f9299abe4d8189f42ec3bec48708c576a6"
 }
 
 variable "JRE_ALPINE_IMAGE" {
