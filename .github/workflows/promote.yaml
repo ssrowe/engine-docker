@@ -66,7 +66,7 @@ env:
 
 jobs:
   promote:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: release
     permissions:
       contents: write
@@ -127,7 +127,7 @@ jobs:
   dockerhub-description:
     needs: promote
     if: needs.promote.outputs.latest_stable == 'true' && contains(vars.IMAGE_REPOS, 'docker.io/')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: release
     permissions:
       contents: read
