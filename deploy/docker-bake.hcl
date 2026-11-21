@@ -22,15 +22,15 @@ variable "OIE_RELEASE_SHA256" {
 }
 
 variable "JRE_NOBLE_IMAGE" {
-  default = "eclipse-temurin:21.0.13_9-jre-noble@sha256:b4f9d2a0bc273417cf5219b7b832bbf0493ed500b7b57d5001d9f83374659060"
+  default = "eclipse-temurin:21.0.13.1_2-jre-noble@sha256:48c8fa59c875b31be10ca14343c1992cabdaf15164a5ace3d823fe4341a14573"
 }
 
 variable "JDK_NOBLE_IMAGE" {
-  default = "eclipse-temurin:21.0.13_9-jdk-noble@sha256:bc12ebd88ffa6dda0092940e179365b05aef8d813b867f9df5a1f168c9a44feb"
+  default = "eclipse-temurin:21.0.13.1_2-jdk-noble@sha256:4dea56dcfa1a89832caf1ffe082c49b3878388df3ce97b7f0a49f9c4372b718c"
 }
 
 variable "JRE_ALPINE_IMAGE" {
-  default = "eclipse-temurin:21.0.13_9-jre-alpine@sha256:ac05c3c42b7c2f1a52c9bd52f01041fa1958231b15ebeae7420429cbc5baf474"
+  default = "eclipse-temurin:21.0.13.1_2-jre-alpine@sha256:5d7689f47d670aca766b9503a70bccc2d73b4eb9221ae8f714ae958313c4ce70"
 }
 
 # Image revision (the N in -rN); empty for local builds.
